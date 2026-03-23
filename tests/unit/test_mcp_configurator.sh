@@ -95,7 +95,7 @@ claudeCode:
         - "-y"
         - "@modelcontextprotocol/server-filesystem"
       env:
-        ALLOWED_DIRECTORIES: "/home/vcap/app,/tmp"
+        ALLOWED_DIRECTORIES: "/workspace,/tmp"
 EOF
 
 rm -f "${TEST_DIR}/.claude.json"
@@ -125,7 +125,7 @@ claudeCode:
         - "-y"
         - "@modelcontextprotocol/server-filesystem"
       env:
-        ALLOWED_DIRECTORIES: "/home/vcap/app"
+        ALLOWED_DIRECTORIES: "/workspace"
     - name: github
       type: stdio
       command: npx
@@ -154,7 +154,7 @@ print_test_header "Test 6: Validate empty .claude.json"
 cat > "${TEST_DIR}/.claude.json" <<'EOF'
 {
   "projects": {
-    "/home/vcap/app": {
+    "/workspace": {
       "allowedTools": [],
       "mcpContextUris": [],
       "mcpServers": {},
@@ -180,7 +180,7 @@ print_test_header "Test 7: Validate .claude.json with servers"
 cat > "${TEST_DIR}/.claude.json" <<'EOF'
 {
   "projects": {
-    "/home/vcap/app": {
+    "/workspace": {
       "allowedTools": [],
       "mcpContextUris": [],
       "mcpServers": {
@@ -299,25 +299,6 @@ if configure_claude_code "${TEST_DIR}" > /dev/null 2>&1; then
     fi
 else
     assert_failure "configure_claude_code should succeed"
-fi
-
-# Test 11: Parse manifest.yml (will fail in CF but test the function)
-print_test_header "Test 11: Parse manifest.yml"
-cat > "${TEST_DIR}/manifest.yml" <<'EOF'
----
-applications:
-- name: my-app
-  claude-code-config:
-    mcp-servers:
-      - name: filesystem
-        type: stdio
-EOF
-
-unset CLAUDE_CODE_MANIFEST_CONFIG
-if parse_manifest_config "${TEST_DIR}"; then
-    assert_success "Should detect claude-code-config in manifest.yml"
-else
-    assert_failure "Should detect claude-code-config in manifest.yml"
 fi
 
 # Test 12: Config file without mcpServers section

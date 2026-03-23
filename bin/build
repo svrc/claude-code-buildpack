@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BP_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+LAYERS_DIR="${CNB_LAYERS_DIR}"
+PLATFORM_DIR="${CNB_PLATFORM_DIR}"
+BP_PLAN_PATH="${CNB_BP_PLAN_PATH}"
+export CNB_BUILDPACK_DIR="${BP_DIR}"
+
+source "${BP_DIR}/lib/installer.sh"
+source "${BP_DIR}/lib/environment.sh"
+source "${BP_DIR}/lib/validator.sh"
+source "${BP_DIR}/lib/claude_configurator.sh"
+
+read_platform_env() {
+    local var_name=$1
+    local default_value=${2:-}
+    local file_path="${PLATFORM_DIR}/env/${var_name}"
+
+    if [ -f "${file_path}" ]; then
+        cat "${file_path}"
+    elif [ -n "${!var_name:-}" ]; then
+        echo "${!var_name}"
+    else
+        echo "${default_value}"
+    fi
+}
+
+echo "-----> Claude Code Environment Buildpack v2.0.0"
+
+echo "-----> Validating environment..."
+validate_environment
+
+export NODE_VERSION=$(read_platform_env "BP_NODE_VERSION" "${NODE_VERSION:-22.12.0}")
+export CLAUDE_CODE_VERSION=$(read_platform_env "BP_CLAUDE_CODE_VERSION" "${CLAUDE_CODE_VERSION:-latest}")
+
+if [ -f ".claude-code-config.yml" ]; then
+    parse_config_settings ".claude-code-config.yml"
+fi
+
+echo "-----> Installing Node.js ${NODE_VERSION}..."
+install_nodejs "${LAYERS_DIR}"
+
+export PATH="${LAYERS_DIR}/node/bin:${PATH}"
+
+echo "-----> Installing Claude Code CLI..."
+install_claude_code "${LAYERS_DIR}"
+
+echo "-----> Installing tmux..."
+install_tmux "${LAYERS_DIR}"
+
+echo "-----> Configuring environment..."
+CONFIG_FILE=""
+if [ -f ".claude-code-config.yml" ]; then
+    CONFIG_FILE=".claude-code-config.yml"
+fi
+setup_env_launch "${LAYERS_DIR}" "${CONFIG_FILE}"
+
+echo "-----> Configuring Claude Code..."
+configure_claude_code "."
+
+if [ -f ".claude-code-config.yml" ]; then
+    configure_plugin_marketplaces "." "${LAYERS_DIR}" "0"
+fi
+
+configure_skills "." "/tmp/claude-build-cache"
+
+echo "-----> Installing scripts..."
+cp "${BP_DIR}/scripts/health-check.js" "./scripts/health-check.js" 2>/dev/null || {
+    mkdir -p "./scripts"
+    cp "${BP_DIR}/scripts/health-check.js" "./scripts/health-check.js"
+}
+cp "${BP_DIR}/scripts/claude-entrypoint.sh" "./scripts/claude-entrypoint.sh"
+cp "${BP_DIR}/scripts/tmux-attach.sh" "./scripts/tmux-attach.sh"
+chmod +x ./scripts/*.sh
+
+echo "-----> Generating launch configuration..."
+cat > "${LAYERS_DIR}/launch.toml" <<'TOML'
+[[processes]]
+type = "web"
+command = ["/workspace/scripts/claude-entrypoint.sh"]
+default = true
+
+[[processes]]
+type = "claude"
+command = ["tmux", "new-session", "-A", "-s", "claude", "claude", "--dangerously-skip-permissions"]
+default = false
+TOML
+
+echo "-----> Verifying installation..."
+verify_installation "${LAYERS_DIR}"
+
+echo "-----> Claude Code Environment ready!"
+echo "       Node.js:     ${NODE_VERSION}"
+echo "       Claude Code: $(get_claude_version "${LAYERS_DIR}")"
+echo "       tmux:        $(tmux -V 2>/dev/null || echo 'system')"
+echo ""
+echo "       Access Claude via: kubectl exec -it <pod> -- /workspace/scripts/tmux-attach.sh"

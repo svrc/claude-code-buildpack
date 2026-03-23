@@ -1,46 +1,38 @@
 #!/usr/bin/env bash
-# bin/detect: Detection script for Claude Code buildpack
-# Exit 0 if this buildpack should be applied, exit 1 otherwise
+set -euo pipefail
 
-set -e
+BUILDPACK_NAME="Claude Code Environment"
+BUILDPACK_VERSION="2.0.0"
 
-BUILD_DIR=$1
+detected=false
 
-# Buildpack metadata
-BUILDPACK_NAME="Claude Code CLI"
-BUILDPACK_VERSION="1.0.0"
-
-# Detection logic
-# Check for .claude-code-config.yml in the application root
-if [ -f "${BUILD_DIR}/.claude-code-config.yml" ]; then
-    echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}"
-    exit 0
+if [ -f ".claude-code-config.yml" ]; then
+    echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}: .claude-code-config.yml found"
+    detected=true
 fi
 
-# Check for .claude-code-config.yml inside JAR files (Spring Boot apps)
-for jar_file in "${BUILD_DIR}"/*.jar; do
-    if [ -f "${jar_file}" ]; then
-        if unzip -l "${jar_file}" 2>/dev/null | grep -q "\.claude-code-config\.yml"; then
-            echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}"
-            exit 0
-        fi
-    fi
-done
-
-# Check for CLAUDE_CODE_ENABLED environment variable
-if [ "${CLAUDE_CODE_ENABLED}" == "true" ]; then
-    echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}"
-    exit 0
-fi
-
-# Check for manifest.yml with claude-code-enabled setting
-# Note: This is simplified - in a real implementation, you'd parse YAML properly
-if [ -f "${BUILD_DIR}/manifest.yml" ]; then
-    if grep -q "claude-code-enabled.*true" "${BUILD_DIR}/manifest.yml" 2>/dev/null; then
-        echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}"
-        exit 0
+if [ -f "${CNB_PLATFORM_DIR}/env/CLAUDE_CODE_ENABLED" ]; then
+    enabled_value=$(cat "${CNB_PLATFORM_DIR}/env/CLAUDE_CODE_ENABLED")
+    if [ "${enabled_value}" = "true" ]; then
+        echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}: CLAUDE_CODE_ENABLED=true"
+        detected=true
     fi
 fi
 
-# Buildpack not applicable
-exit 1
+if [ -d ".claude" ]; then
+    echo "${BUILDPACK_NAME} ${BUILDPACK_VERSION}: .claude/ state directory found"
+    detected=true
+fi
+
+if [ "${detected}" = "true" ]; then
+    cat >> "${CNB_BUILD_PLAN_PATH}" <<TOML
+[[provides]]
+name = "claude-code"
+
+[[requires]]
+name = "claude-code"
+TOML
+    exit 0
+fi
+
+exit 100

@@ -100,18 +100,18 @@ fi
 # Test 5: API key format validation
 print_test_header "Test 5: API key format validation"
 
-# Test with valid API key format
+export CNB_PLATFORM_DIR="${TEST_DIR}/platform"
+mkdir -p "${CNB_PLATFORM_DIR}/env"
+
 export ANTHROPIC_API_KEY="sk-ant-test123"
-mkdir -p "${TEST_DIR}/test-app"
-if validate_environment "${TEST_DIR}/test-app" 2>&1 | grep -q "API key format validated"; then
+if validate_environment 2>&1 | grep -q "API key format validated"; then
     assert_success "Valid API key format should be recognized"
 else
     assert_failure "Valid API key format should be recognized"
 fi
 
-# Test with invalid API key format
 export ANTHROPIC_API_KEY="invalid-key"
-if validate_environment "${TEST_DIR}/test-app" 2>&1 | grep -q "appears invalid"; then
+if validate_environment 2>&1 | grep -q "appears invalid"; then
     assert_success "Invalid API key format should be detected"
 else
     assert_failure "Invalid API key format should be detected"
@@ -122,10 +122,8 @@ unset ANTHROPIC_API_KEY
 # Test 6: OAuth token validation
 print_test_header "Test 6: OAuth token validation"
 
-# Test with valid OAuth token
 export CLAUDE_CODE_OAUTH_TOKEN="test-oauth-token-123"
-mkdir -p "${TEST_DIR}/test-oauth-app"
-if validate_environment "${TEST_DIR}/test-oauth-app" 2>&1 | grep -q "OAuth token detected"; then
+if validate_environment 2>&1 | grep -q "OAuth token detected"; then
     assert_success "Valid OAuth token should be recognized"
 else
     assert_failure "Valid OAuth token should be recognized"
@@ -133,11 +131,9 @@ fi
 
 unset CLAUDE_CODE_OAUTH_TOKEN
 
-# Test with both API key and OAuth token (both should be accepted)
 export ANTHROPIC_API_KEY="sk-ant-test456"
 export CLAUDE_CODE_OAUTH_TOKEN="test-oauth-token-456"
-mkdir -p "${TEST_DIR}/test-both-app"
-if validate_environment "${TEST_DIR}/test-both-app" 2>&1 | grep -q "API key format validated"; then
+if validate_environment 2>&1 | grep -q "API key format validated"; then
     assert_success "Should accept when both credentials are present"
 else
     assert_failure "Should accept when both credentials are present"
@@ -146,9 +142,7 @@ fi
 unset ANTHROPIC_API_KEY
 unset CLAUDE_CODE_OAUTH_TOKEN
 
-# Test with neither credential set
-mkdir -p "${TEST_DIR}/test-no-auth-app"
-if validate_environment "${TEST_DIR}/test-no-auth-app" 2>&1 | grep -q "Neither.*is set"; then
+if validate_environment 2>&1 | grep -q "Neither.*is set"; then
     assert_success "Should warn when neither credential is set"
 else
     assert_failure "Should warn when neither credential is set"

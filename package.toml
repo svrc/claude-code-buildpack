@@ -1,0 +1,11 @@
+[buildpack]
+  uri = "."
+
+# Target platforms for multi-arch buildpackage
+[[targets]]
+  os   = "linux"
+  arch = "amd64"
+
+[[targets]]
+  os   = "linux"
+  arch = "arm64"

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CNB exec.d binary — runs at container startup before the main process.
+# Restores Claude Code state and writes dynamic env vars to FD 3 as key="value" lines.
+
+APP_DIR="${CNB_APP_DIR:-/workspace}"
+HOME_DIR="${HOME:-/home/cnb}"
+
+if [ -d "${APP_DIR}/.claude" ]; then
+    mkdir -p "${HOME_DIR}/.claude"
+    cp -a "${APP_DIR}/.claude/." "${HOME_DIR}/.claude/"
+fi
+
+if [ -f "${APP_DIR}/.claude.json" ]; then
+    cp "${APP_DIR}/.claude.json" "${HOME_DIR}/.claude.json"
+fi
+
+if [ -f "${APP_DIR}/.claude-code-config.yml" ]; then
+    cp "${APP_DIR}/.claude-code-config.yml" "${HOME_DIR}/.claude-code-config.yml"
+fi
+
+# Write env vars to FD 3 (CNB exec.d protocol)
+cat >&3 <<EOF
+CLAUDE_CONFIG_DIR = "${HOME_DIR}/.claude"
+EOF
+
+if [ -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+    echo "NODE_EXTRA_CA_CERTS = \"/etc/ssl/certs/ca-certificates.crt\"" >&3
+fi
+
+if [ -n "${CF_SYSTEM_CERT_PATH:-}" ] && [ -d "${CF_SYSTEM_CERT_PATH}" ]; then
+    CA_BUNDLE="/tmp/cf-ca-bundle.crt"
+    cat "${CF_SYSTEM_CERT_PATH}"/*.crt > "${CA_BUNDLE}" 2>/dev/null || true
+    if [ -f "${CA_BUNDLE}" ] && [ -s "${CA_BUNDLE}" ]; then
+        echo "NODE_EXTRA_CA_CERTS = \"${CA_BUNDLE}\"" >&3
+    fi
+fi

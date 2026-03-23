@@ -1,108 +1,66 @@
 #!/usr/bin/env bash
-# lib/environment.sh: Environment variable setup and configuration
+# lib/environment.sh: CNB v3 environment variable setup via env.launch/ files
 
-# Set up environment variables for Claude Code
-setup_environment() {
-    local deps_dir=$1
-    local build_dir=$2
-    local index=$3
+# Set up env.launch/ layer for Claude Code environment variables
+setup_env_launch() {
+    local layers_dir=$1
+    local config_file=$2
 
-    # Create profile.d directory in BUILD_DIR (not DEPS_DIR!)
-    # Cloud Foundry sources scripts from /home/vcap/app/.profile.d/ at runtime
-    mkdir -p "${build_dir}/.profile.d"
-    local profile_script="${build_dir}/.profile.d/claude-code-env.sh"
+    local layer_dir="${layers_dir}/claude-env"
+    local env_dir="${layer_dir}/env.launch"
 
-    # Use the actual index number in the script (not ${DEPS_INDEX} which may not be set at runtime)
-    cat > "${profile_script}" <<EOF
-# Claude Code CLI environment configuration
+    mkdir -p "${env_dir}"
 
-# Add Claude Code to PATH
-export PATH="\$DEPS_DIR/${index}/bin:\$PATH"
-
-# Add Node.js to PATH
-export PATH="\$DEPS_DIR/${index}/node/bin:\$PATH"
-
-# Set Claude CLI path for Java applications
-export CLAUDE_CLI_PATH="\$DEPS_DIR/${index}/bin/claude"
-
-# Set home directory for Claude configuration
-export CLAUDE_CONFIG_HOME="\$HOME"
-
-# Log level configuration (from config file or default)
-# Priority: config file > environment variable > default
-if [ -z "\$CLAUDE_CODE_LOG_LEVEL" ]; then
-    export CLAUDE_CODE_LOG_LEVEL="${CLAUDE_CODE_LOG_LEVEL:-info}"
-fi
-
-# Model configuration (from config file or default)
-if [ -z "\$CLAUDE_CODE_MODEL" ]; then
-    export CLAUDE_CODE_MODEL="${CLAUDE_CODE_MODEL:-sonnet}"
-fi
-
-# Configure Node.js to trust Cloud Foundry system certificates
-# This is critical for remote MCP servers (SSE/HTTP) that use internal CAs
-if [ -n "\$CF_SYSTEM_CERT_PATH" ] && [ -d "\$CF_SYSTEM_CERT_PATH" ]; then
-    # Concatenate all certificate files into a single bundle
-    # NODE_EXTRA_CA_CERTS requires a file path, not a directory
-    CA_BUNDLE="/tmp/cf-ca-bundle.crt"
-    cat "\$CF_SYSTEM_CERT_PATH"/*.crt > "\$CA_BUNDLE" 2>/dev/null
-
-    if [ -f "\$CA_BUNDLE" ]; then
-        export NODE_EXTRA_CA_CERTS="\$CA_BUNDLE"
+    local log_level="info"
+    local model="sonnet"
+    if [ -f "${config_file}" ]; then
+        local parsed
+        parsed=$(grep -E "^[[:space:]]*logLevel:" "${config_file}" | sed -E 's/^[[:space:]]*logLevel:[[:space:]]*(.+)[[:space:]]*$/\1/' | tr -d '"' | tr -d "'")
+        [ -n "${parsed}" ] && log_level="${parsed}"
+        parsed=$(grep -E "^[[:space:]]*model:" "${config_file}" | sed -E 's/^[[:space:]]*model:[[:space:]]*(.+)[[:space:]]*$/\1/' | tr -d '"' | tr -d "'")
+        [ -n "${parsed}" ] && model="${parsed}"
     fi
-fi
+
+    # Write env var files (.default = set only if not already set)
+    printf '%s' "${log_level}" > "${env_dir}/CLAUDE_CODE_LOG_LEVEL.default"
+    printf '%s' "${model}" > "${env_dir}/CLAUDE_CODE_MODEL.default"
+    printf '%s' "xterm-256color" > "${env_dir}/TERM.default"
+    printf '%s' "1" > "${env_dir}/CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC.default"
+    printf '%s' "1" > "${env_dir}/DISABLE_AUTOUPDATER.default"
+
+    cat > "${layers_dir}/claude-env.toml" <<'EOF'
+[types]
+launch = true
 EOF
 
-    chmod +x "${profile_script}"
-
-    # Export environment for build time
-    export PATH="${deps_dir}/bin:${deps_dir}/node/bin:${PATH}"
-    export CLAUDE_CLI_PATH="${deps_dir}/bin/claude"
+    local execd_dir="${layer_dir}/exec.d"
+    mkdir -p "${execd_dir}"
+    cp "${CNB_BUILDPACK_DIR}/exec.d/claude-env" "${execd_dir}/claude-env"
+    chmod +x "${execd_dir}/claude-env"
 }
 
-# Create configuration files
-create_config_files() {
-    local deps_dir=$1
-    local build_dir=$2
-
-    # Create buildpack config file
-    local config_file="${deps_dir}/config.yml"
-
-    cat > "${config_file}" <<EOF
----
-name: claude-code-buildpack
-config:
-  version: ${CLAUDE_CODE_VERSION:-latest}
-  cli_path: ${deps_dir}/bin/claude
-  node_path: ${deps_dir}/node/bin/node
-  npm_path: ${deps_dir}/node/bin/npm
-  config_home: /home/vcap/app
-EOF
-
-    # Note: .claude.json is now created by the Claude configurator (lib/claude_configurator.sh)
-    # See configure_mcp_servers() function for MCP server configuration
-}
-
-# Get Claude Code version (if needed for other scripts)
-get_claude_code_version() {
-    echo "${CLAUDE_CODE_VERSION:-latest}"
-}
-
-# Export API key or OAuth token handling (without exposing it in logs)
+# Validate API key or OAuth token availability
 setup_api_key() {
-    local deps_dir=$1
+    local api_key="${ANTHROPIC_API_KEY:-}"
+    local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 
-    if [ -z "${ANTHROPIC_API_KEY}" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
+    # Check platform env files (CNB convention)
+    if [ -z "${api_key}" ] && [ -n "${CNB_PLATFORM_DIR:-}" ]; then
+        api_key=$(cat "${CNB_PLATFORM_DIR}/env/ANTHROPIC_API_KEY" 2>/dev/null) || true
+    fi
+    if [ -z "${oauth_token}" ] && [ -n "${CNB_PLATFORM_DIR:-}" ]; then
+        oauth_token=$(cat "${CNB_PLATFORM_DIR}/env/CLAUDE_CODE_OAUTH_TOKEN" 2>/dev/null) || true
+    fi
+
+    if [ -z "${api_key}" ] && [ -z "${oauth_token}" ]; then
         echo "       WARNING: Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set"
         echo "       Claude Code will not function without authentication"
         return 1
     fi
 
-    # API key or OAuth token is available via environment variable
-    # We don't write it to disk for security reasons
-    if [ -n "${ANTHROPIC_API_KEY}" ]; then
+    if [ -n "${api_key}" ]; then
         echo "       API key detected (not logged for security)"
-    elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
+    elif [ -n "${oauth_token}" ]; then
         echo "       OAuth token detected (not logged for security)"
     fi
     return 0

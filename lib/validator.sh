@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # lib/validator.sh: Validation utilities for buildpack
 
-# Validate environment and prerequisites
+# Validate environment and prerequisites for CNB v3 build
 validate_environment() {
-    local build_dir=$1
-
     echo "       Checking prerequisites..."
 
     # Check for required commands
@@ -18,29 +16,38 @@ validate_environment() {
         return 1
     fi
 
-    # Validate ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN
-    if [ -z "${ANTHROPIC_API_KEY}" ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
+    if ! command -v python3 &> /dev/null; then
+        echo "       ERROR: python3 is required for YAML parsing but not installed"
+        return 1
+    fi
+
+    # Resolve API key: check CNB platform dir files first, then env vars
+    local api_key="${ANTHROPIC_API_KEY}"
+    if [ -z "${api_key}" ] && [ -n "${CNB_PLATFORM_DIR}" ] && [ -f "${CNB_PLATFORM_DIR}/env/ANTHROPIC_API_KEY" ]; then
+        api_key=$(cat "${CNB_PLATFORM_DIR}/env/ANTHROPIC_API_KEY")
+        export ANTHROPIC_API_KEY="${api_key}"
+    fi
+
+    local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN}"
+    if [ -z "${oauth_token}" ] && [ -n "${CNB_PLATFORM_DIR}" ] && [ -f "${CNB_PLATFORM_DIR}/env/CLAUDE_CODE_OAUTH_TOKEN" ]; then
+        oauth_token=$(cat "${CNB_PLATFORM_DIR}/env/CLAUDE_CODE_OAUTH_TOKEN")
+        export CLAUDE_CODE_OAUTH_TOKEN="${oauth_token}"
+    fi
+
+    # Validate authentication
+    if [ -z "${api_key}" ] && [ -z "${oauth_token}" ]; then
         echo "       WARNING: Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set"
         echo "       Claude Code requires authentication to function"
-        echo "       Set either ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in your manifest"
-    elif [ -n "${ANTHROPIC_API_KEY}" ]; then
-        # Basic validation - check if it looks like an Anthropic API key
-        if [[ ! "${ANTHROPIC_API_KEY}" =~ ^sk-ant- ]]; then
+        echo "       Provide credentials via environment variables or platform env files"
+    elif [ -n "${api_key}" ]; then
+        if [[ ! "${api_key}" =~ ^sk-ant- ]]; then
             echo "       WARNING: ANTHROPIC_API_KEY format appears invalid"
             echo "       Expected format: sk-ant-..."
         else
             echo "       API key format validated"
         fi
-    elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
+    elif [ -n "${oauth_token}" ]; then
         echo "       OAuth token detected (using CLAUDE_CODE_OAUTH_TOKEN)"
-    fi
-
-    # Check disk space (basic check)
-    local available_space=$(df -k "${build_dir}" | awk 'NR==2 {print $4}')
-    local required_space=524288  # 512MB in KB
-
-    if [ "${available_space}" -lt "${required_space}" ]; then
-        echo "       WARNING: Low disk space (available: ${available_space}KB, recommended: ${required_space}KB)"
     fi
 
     return 0

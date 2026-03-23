@@ -1,0 +1,36 @@
+api = "0.10"
+
+[buildpack]
+  id      = "io.tanzu.buildpacks.claude-code"
+  version = "2.0.0"
+  name    = "Claude Code Environment"
+  homepage = "https://github.com/stuartcharlton/claude-code-buildpack"
+  description = "Installs Claude Code CLI, Node.js, and tmux into containers for AI-assisted development environments"
+  keywords = ["claude", "anthropic", "ai", "mcp", "claude-code", "tmux"]
+
+  [[buildpack.licenses]]
+    type = "MIT"
+
+# Target Paketo Jammy stack (Ubuntu 22.04) — Korifi default
+[[targets]]
+  os   = "linux"
+  arch = "amd64"
+
+  [[targets.distros]]
+    name    = "ubuntu"
+    version = "22.04"
+
+[[targets]]
+  os   = "linux"
+  arch = "arm64"
+
+  [[targets.distros]]
+    name    = "ubuntu"
+    version = "22.04"
+
+# Also declare stacks for backward compatibility with older lifecycle versions
+[[stacks]]
+  id = "io.buildpacks.stacks.jammy"
+
+[[stacks]]
+  id = "*"

@@ -55,28 +55,6 @@ parse_claude_code_config() {
     return 0
 }
 
-# Parse MCP server configuration from manifest.yml
-# Note: Cloud Foundry doesn't make manifest.yml available during staging
-# This function is here for reference but won't work in actual CF environment
-# Users should use .claude-code-config.yml instead
-parse_manifest_config() {
-    local build_dir=$1
-    local manifest_file="${build_dir}/manifest.yml"
-
-    if [ ! -f "${manifest_file}" ]; then
-        return 1
-    fi
-
-    # Check if manifest has claude-code-config section
-    if grep -q "claude-code-config:" "${manifest_file}"; then
-        echo "       Found claude-code-config in manifest.yml"
-        export CLAUDE_CODE_MANIFEST_CONFIG="${manifest_file}"
-        return 0
-    fi
-
-    return 1
-}
-
 # Extract MCP servers from YAML configuration file
 # Simplified YAML parser for the specific structure we expect
 extract_mcp_servers() {
@@ -117,7 +95,7 @@ except Exception as e:
     # Return empty config with projects structure
     print(json.dumps({
         'projects': {
-            '/home/vcap/app': {
+            '/workspace': {
                 'allowedTools': [],
                 'mcpContextUris': [],
                 'mcpServers': {},
@@ -221,10 +199,10 @@ if current_server and current_server_name:
     mcp_servers[current_server_name] = current_server
 
 # Output JSON in Claude Code format with projects structure
-# The app directory is /home/vcap/app in Cloud Foundry
+# The app directory is /workspace in Cloud Foundry
 output = {
     'projects': {
-        '/home/vcap/app': {
+        '/workspace': {
             'allowedTools': [],
             'mcpContextUris': [],
             'mcpServers': mcp_servers,
@@ -245,7 +223,7 @@ PYTHON_SCRIPT
         cat > "${output_file}" <<'EOF'
 {
   "projects": {
-    "/home/vcap/app": {
+    "/workspace": {
       "allowedTools": [],
       "mcpContextUris": [],
       "mcpServers": {},
@@ -290,19 +268,11 @@ generate_claude_json() {
         fi
     fi
 
-    # Try to parse manifest.yml (won't work in CF but included for completeness)
-    if parse_manifest_config "${build_dir}"; then
-        if extract_mcp_servers "${CLAUDE_CODE_MANIFEST_CONFIG}" "${output_file}"; then
-            echo "       Created .claude.json from manifest.yml"
-            return 0
-        fi
-    fi
-
     # No configuration found - create empty .claude.json with projects structure
     cat > "${output_file}" <<'EOF'
 {
   "projects": {
-    "/home/vcap/app": {
+    "/workspace": {
       "allowedTools": [],
       "mcpContextUris": [],
       "mcpServers": {},
