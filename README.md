@@ -52,12 +52,12 @@ my-app/
 ### 4. Deploy
 
 ```bash
-cf push my-app -b io.tanzu.buildpacks.claude-code
+dash push my-app -b io.tanzu.buildpacks.claude-code
 ```
 
 ### 5. Access Claude Code
 
-Since `cf ssh` is not available in Korifi, use `kubectl exec` to attach to the tmux session:
+Since `dash ssh` is not available in Korifi, use `kubectl exec` to attach to the tmux session:
 
 ```bash
 kubectl exec -it <pod-name> -- /workspace/scripts/tmux-attach.sh
@@ -236,7 +236,7 @@ spec:
 
 ## Known Limitations
 
-- **No cf ssh**: Korifi does not support `cf ssh`. Use `kubectl exec` instead.
+- **No dash ssh**: DASH does not yet support `cash ssh`. Use `kubectl exec` instead for now.
 - **Ephemeral Filesystem**: Changes made to the filesystem at runtime are lost on restart. State must be managed via the `.claude/` directory in the application source.
 - **Non-root User**: The buildpack runs as the `cnb` user (UID 1000). Ensure your application files and scripts are compatible with non-root execution.
 - **Workspace Path**: The application source is located at `/workspace`, not `/home/vcap/app`.
